@@ -8,6 +8,8 @@
 
 #include <driver/gpio.h>
 #include <driver/i2s_pdm.h>
+#include <soc/soc.h>
+#include <soc/usb_serial_jtag_reg.h>
 #if FREEINK_DEVICE_METALIO_EINK4
 #include <MetalioAudio.h>
 #endif
@@ -18,6 +20,9 @@ namespace {
 // Assert/deassert the mic power-enable rail per the board profile's polarity.
 void setMicPower(const BoardConfig::MicConfig& mic, bool on) {
   if (mic.enable == BoardConfig::PIN_UNASSIGNED) return;
+  // Sleep holds the enable OFF with gpio_hold_en (PowerManager::powerDownRailsForSleep), and the
+  // hold survives wake and reset; a held pad ignores writes, so the mic would never power up.
+  gpio_hold_dis(static_cast<gpio_num_t>(mic.enable));
   pinMode(mic.enable, OUTPUT);
   digitalWrite(mic.enable, (on == mic.enableActiveHigh) ? HIGH : LOW);
 }
@@ -44,6 +49,13 @@ bool Microphone::begin(uint32_t sampleRate) {
     return false;
   }
 
+  // GPIO19/20 are the S3's USB PHY pads. Boards that route a PDM mic there (the Sticky's USB-C is a
+  // CH343 bridge on UART0) must release them, or the PHY can reclaim them after a deep-sleep wake.
+  if (mic.clk == 19 || mic.clk == 20 || mic.data == 19 || mic.data == 20) {
+    CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE);
+    gpio_reset_pin(static_cast<gpio_num_t>(mic.clk));
+    gpio_reset_pin(static_cast<gpio_num_t>(mic.data));
+  }
   setMicPower(mic, true);
   // PDM mics need a brief settle after the rail comes up before the clock runs.
   delay(10);
