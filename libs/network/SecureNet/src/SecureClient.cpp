@@ -140,7 +140,8 @@ int SecureClient::connectWithMethod(const char* host, uint16_t port, void* metho
   // failing (MEMORY_E mid-download) at the ~20KB free heap a busy activity
   // leaves. With 2KB records the receive buffer stays trivial. Servers that
   // ignore the extension keep 16KB records and behave as before.
-  wolfSSL_UseMaxFragment(ssl, WOLFSSL_MFL_2_11);
+  // Boards with PSRAM have the heap for 16KB records, which cut per-record overhead on large downloads.
+  if (!psramFound()) wolfSSL_UseMaxFragment(ssl, WOLFSSL_MFL_2_11);
 #endif
 
   // The recv callback is non-blocking (returns WANT_READ when no bytes are
